@@ -9,7 +9,7 @@ crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = { workspace = true}
 stellar-tokens = "0.6.0"
 stellar-access = "0.6.0"
 stellar-contract-utils = "0.6.0"

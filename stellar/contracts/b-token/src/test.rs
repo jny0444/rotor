@@ -1,9 +1,5 @@
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
-
 use crate::contract::{BToken, BTokenClient};
-
-#[cfg(test)]
-extern crate std;
+use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 fn create_client<'a>(e: &Env, owner: &Address, initial_supply: i128) -> BTokenClient<'a> {
     let name = String::from_str(e, "Before Token");
@@ -59,4 +55,17 @@ fn burn_tokens() {
 
     assert_eq!(client.total_supply(), 500);
     assert_eq!(client.balance(&owner), 500);
+}
+
+#[test]
+fn mint_tokens() {
+    let e = Env::default();
+    let owner = Address::generate(&e);
+    let client = create_client(&e, &owner, 1000);
+
+    e.mock_all_auths();
+    client.mint(&owner, &500);
+
+    assert_eq!(client.balance(&owner), 1500);
+    assert_eq!(client.total_supply(), 1500);
 }
