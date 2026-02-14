@@ -1,4 +1,5 @@
 import Header from "@/components/Header";
+import UserPane from "@/components/UserPane";
 
 export default function Profile() {
   return (
@@ -14,6 +15,7 @@ export default function Profile() {
       </video>
       <div className="relative z-10 flex flex-col min-h-screen">
         <Header />
+        <UserPane />
       </div>
     </div>
   );
