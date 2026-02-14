@@ -13,15 +13,15 @@ export default function Header() {
     : "";
 
   return (
-    <div className="">
-      <div className="flex flex-row rounded-xl p-2 sm:p-4 justify-between items-center">
+    <div className="pt-3 sm:pt-1">
+      <div className="flex flex-row rounded-xl p-2 pt-0 sm:p-4 justify-between items-center">
         <Link href="/" className="flex flex-row gap-2 items-center">
           <Image
             src="/icon-light.svg"
             alt="Rotor Logo"
             width={1}
             height={1}
-            className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl"
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-md sm:rounded-xl"
           />
           <p className="text-2xl sm:text-4xl sora-font">Rotor</p>
         </Link>
@@ -33,7 +33,7 @@ export default function Header() {
                 alt="User"
                 width={1}
                 height={1}
-                className="w-6 h-6 sm:w-9 sm:h-9 rounded-xl cursor-pointer hover:opacity-80 transition-opacity"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-md sm:rounded-xl cursor-pointer hover:opacity-80 transition-opacity"
               />
             </Link>
             <button

@@ -1,3 +1,4 @@
+import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 import Swap from "@/components/Swap";
 
@@ -24,6 +25,7 @@ export default function Home() {
           </div>
           <Swap />
         </div>
+        <Footer />
       </div>
     </div>
   );
