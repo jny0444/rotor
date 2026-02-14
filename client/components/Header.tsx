@@ -1,0 +1,56 @@
+"use client";
+
+import Image from "next/image";
+import { useWallet } from "./WalletProvider";
+import { LuWalletCards } from "react-icons/lu";
+
+export default function Header() {
+  const { address, isConnected, connect, disconnect } = useWallet();
+
+  const truncatedAddress = address
+    ? `${address.slice(0, 4)}...${address.slice(-4)}`
+    : "";
+
+  return (
+    <div className="">
+      <div className="flex flex-row rounded-xl p-2 sm:p-4 justify-between items-center">
+        <div className="flex flex-row gap-2">
+          <Image
+            src="/icon-light.svg"
+            alt="Rotor Logo"
+            width={1}
+            height={1}
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl"
+          />
+          <p className="text-2xl sm:text-4xl sora-font">Rotor</p>
+        </div>
+        {isConnected ? (
+          <button
+            onClick={disconnect}
+            className="group rounded-xl py-1 px-3 bg-white active:shadow-[inset_0_0_0_3px_#9EB8E9] transition-all cursor-pointer flex items-center gap-2"
+          >
+            <LuWalletCards className="text-black text-lg sm:text-xl" />
+            <p className="text-base sm:text-xl bricolage-grotesque-font text-black relative">
+              <span className="transition-opacity duration-200 group-hover:opacity-0">
+                {truncatedAddress}
+              </span>
+              <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                Disconnect
+              </span>
+            </p>
+          </button>
+        ) : (
+          <button
+            onClick={connect}
+            className="rounded-xl py-1 px-3 bg-white active:shadow-[inset_0_0_0_3px_#9EB8E9] transition-all cursor-pointer flex items-center gap-2"
+          >
+            <LuWalletCards className="text-black text-lg sm:text-xl" />
+            <p className="text-base sm:text-xl bricolage-grotesque-font text-black">
+              Connect Wallet
+            </p>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
