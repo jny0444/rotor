@@ -15,6 +15,8 @@ interface WalletContextType {
   balance: number;
   connect: () => Promise<void>;
   disconnect: () => void;
+  signTransaction: (xdr: string) => Promise<string>;
+  refreshBalance: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -23,6 +25,8 @@ const WalletContext = createContext<WalletContextType>({
   balance: 0,
   connect: async () => {},
   disconnect: () => {},
+  signTransaction: async () => "",
+  refreshBalance: async () => {},
 });
 
 export function useWallet() {
@@ -74,8 +78,12 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
       const { KitEventType } = await import(
         "@creit-tech/stellar-wallets-kit/types"
       );
+      const { Networks } = await import(
+        "@creit-tech/stellar-wallets-kit/types"
+      );
 
       StellarWalletsKit.init({
+        network: Networks.TESTNET,
         modules: defaultModules(),
       });
 
@@ -139,6 +147,27 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null);
   }, [kitReady]);
 
+  const signTransaction = useCallback(
+    async (xdr: string): Promise<string> => {
+      if (!kitReady) throw new Error("Wallet not ready");
+      const { StellarWalletsKit } = await import(
+        "@creit-tech/stellar-wallets-kit/sdk"
+      );
+      const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
+        networkPassphrase: "Test SDF Network ; September 2015",
+      });
+      return signedTxXdr;
+    },
+    [kitReady]
+  );
+
+  const refreshBalance = useCallback(async () => {
+    if (address) {
+      const newBalance = await fetchXlmBalance(address);
+      setBalance(newBalance);
+    }
+  }, [address]);
+
   return (
     <WalletContext.Provider
       value={{
@@ -147,6 +176,8 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
         balance,
         connect,
         disconnect,
+        signTransaction,
+        refreshBalance,
       }}
     >
       {children}
