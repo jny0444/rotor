@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useWallet } from "./WalletProvider";
+import { useWallet } from "../utils/WalletProvider";
 import { LuWalletCards } from "react-icons/lu";
 
 export default function Header() {
@@ -17,7 +17,7 @@ export default function Header() {
       <div className="flex flex-row rounded-xl p-2 pt-0 sm:p-4 justify-between items-center">
         <Link href="/" className="flex flex-row gap-2 items-center">
           <Image
-            src="/icon-light.svg"
+            src="/favicon.svg"
             alt="Rotor Logo"
             width={1}
             height={1}

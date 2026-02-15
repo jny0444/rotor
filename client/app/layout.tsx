@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Sora, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
-import WalletProvider from "@/components/WalletProvider";
+import WalletProvider from "@/utils/WalletProvider";
 
 const bricolageGrotesque = Bricolage_Grotesque({
   subsets: ["latin"],

@@ -6,7 +6,7 @@ import { IoIosSend } from "react-icons/io";
 import { FaRegPaste } from "react-icons/fa6";
 import { LuScanFace } from "react-icons/lu";
 import { Html5Qrcode } from "html5-qrcode";
-import { useWallet } from "./WalletProvider";
+import { useWallet } from "../utils/WalletProvider";
 
 export default function Swap() {
   const [recipient, setRecipient] = useState("");
@@ -55,7 +55,7 @@ export default function Swap() {
         },
         () => {
           // QR code not found in this frame — ignore
-        }
+        },
       );
     } catch (err) {
       console.error("Failed to start QR scanner:", err);
@@ -161,7 +161,9 @@ export default function Swap() {
                   style={{ width: `${Math.max(1, (amount || "0").length)}ch` }}
                 />
                 {!showUsd && (
-                  <span className="text-gray-400 text-2xl sm:text-4xl ml-2">XLM</span>
+                  <span className="text-gray-400 text-2xl sm:text-4xl ml-2">
+                    XLM
+                  </span>
                 )}
               </div>
             </div>

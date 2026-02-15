@@ -4,7 +4,7 @@ import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { FaRegCopy, FaCheck } from "react-icons/fa6";
 import Image from "next/image";
-import { useWallet } from "./WalletProvider";
+import { useWallet } from "../utils/WalletProvider";
 
 export default function UserPane() {
   const { address, balance, isConnected } = useWallet();
@@ -31,12 +31,7 @@ export default function UserPane() {
         <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="flex flex-col items-center py-12 px-5">
             <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-4">
-              <Image
-                src="/stellar.svg"
-                alt="Stellar"
-                width={32}
-                height={32}
-              />
+              <Image src="/stellar.svg" alt="Stellar" width={32} height={32} />
             </div>
             <p className="text-sm text-gray-400 sora-font">
               Connect your wallet to view your profile
