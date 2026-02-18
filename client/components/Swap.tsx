@@ -7,20 +7,39 @@ import { FaRegPaste } from "react-icons/fa6";
 import { LuScanFace } from "react-icons/lu";
 import { Html5Qrcode } from "html5-qrcode";
 import { useWallet } from "../utils/WalletProvider";
+import { buildPaymentTx, submitSignedTransaction } from "../lib/stellar";
+
+type TxStatus =
+  | { stage: "idle" }
+  | { stage: "building" }
+  | { stage: "signing" }
+  | { stage: "submitting" }
+  | { stage: "success"; hash: string }
+  | { stage: "error"; message: string };
 
 export default function Swap() {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [showUsd, setShowUsd] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [txStatus, setTxStatus] = useState<TxStatus>({ stage: "idle" });
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerId = "qr-scanner-container";
 
+  const { address, balance, isConnected, signTransaction, refreshBalance } =
+    useWallet();
+
+  const isLoading = ["building", "signing", "submitting"].includes(
+    txStatus.stage
+  );
+
+  // ---------------------------------------------------------------------------
+  // QR Scanner helpers (unchanged)
+  // ---------------------------------------------------------------------------
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
       try {
         const state = scannerRef.current.getState();
-        // 2 = SCANNING, 3 = PAUSED
         if (state === 2 || state === 3) {
           await scannerRef.current.stop();
         }
@@ -35,8 +54,6 @@ export default function Swap() {
 
   const startScanner = useCallback(async () => {
     setShowScanner(true);
-
-    // Wait for DOM element to mount
     await new Promise((r) => setTimeout(r, 100));
 
     try {
@@ -45,17 +62,12 @@ export default function Swap() {
 
       await scanner.start(
         { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-        },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           setRecipient(decodedText.trim());
           stopScanner();
         },
-        () => {
-          // QR code not found in this frame — ignore
-        },
+        () => {}
       );
     } catch (err) {
       console.error("Failed to start QR scanner:", err);
@@ -63,7 +75,6 @@ export default function Swap() {
     }
   }, [stopScanner]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (scannerRef.current) {
@@ -76,8 +87,9 @@ export default function Swap() {
     };
   }, []);
 
-  const { balance } = useWallet();
-
+  // ---------------------------------------------------------------------------
+  // Balance helpers
+  // ---------------------------------------------------------------------------
   const handleUseHalf = () => {
     setAmount(String(balance / 2));
   };
@@ -86,11 +98,99 @@ export default function Swap() {
     setAmount(String(balance));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // ---------------------------------------------------------------------------
+  // Send XLM — following the frontend-stellar-sdk skill TX UX checklist
+  // ---------------------------------------------------------------------------
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: handle confirm
+
+    if (!address || !isConnected) {
+      setTxStatus({ stage: "error", message: "Please connect your wallet first" });
+      return;
+    }
+
+    if (!recipient.trim()) {
+      setTxStatus({ stage: "error", message: "Enter a destination address" });
+      return;
+    }
+
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setTxStatus({ stage: "error", message: "Enter a valid amount" });
+      return;
+    }
+
+    if (parsedAmount > balance) {
+      setTxStatus({ stage: "error", message: "Insufficient XLM balance" });
+      return;
+    }
+
+    try {
+      // 1. Build transaction
+      setTxStatus({ stage: "building" });
+      const unsignedXdr = await buildPaymentTx(address, recipient.trim(), amount);
+
+      // 2. Request wallet signature
+      setTxStatus({ stage: "signing" });
+      const signedXdr = await signTransaction(unsignedXdr);
+
+      // 3. Submit to network
+      setTxStatus({ stage: "submitting" });
+      const result = await submitSignedTransaction(signedXdr);
+
+      if (result.success) {
+        setTxStatus({ stage: "success", hash: result.hash });
+        setRecipient("");
+        setAmount("");
+        // Refresh balance after successful send
+        await refreshBalance();
+      } else {
+        setTxStatus({ stage: "error", message: result.message });
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong";
+
+      // Handle user-rejected signing
+      if (message.toLowerCase().includes("rejected") || message.toLowerCase().includes("cancel")) {
+        setTxStatus({ stage: "error", message: "Transaction signing was cancelled" });
+      } else {
+        setTxStatus({ stage: "error", message });
+      }
+    }
   };
 
+  // Auto-dismiss success/error after 8s
+  useEffect(() => {
+    if (txStatus.stage === "success" || txStatus.stage === "error") {
+      const t = setTimeout(() => setTxStatus({ stage: "idle" }), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [txStatus]);
+
+  // ---------------------------------------------------------------------------
+  // Button label based on state
+  // ---------------------------------------------------------------------------
+  const buttonLabel = () => {
+    switch (txStatus.stage) {
+      case "building":
+        return "Building…";
+      case "signing":
+        return "Sign in wallet…";
+      case "submitting":
+        return "Sending…";
+      default:
+        return (
+          <>
+            Send <IoIosSend />
+          </>
+        );
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <div className="my-8 w-full max-w-md mx-auto px-4 sm:px-0">
       <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden">
@@ -233,14 +333,36 @@ export default function Swap() {
             </div>
           </div>
 
-          {/* Confirm button */}
+          {/* Status banner */}
+          {txStatus.stage === "success" && (
+            <div className="mx-5 mb-4 px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm sora-font animate-[fadeIn_0.3s_ease-out]">
+              <p className="font-semibold">Transaction sent! ✓</p>
+              <a
+                href={`https://stellar.expert/explorer/testnet/tx/${txStatus.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs ibm-plex-mono-regular underline underline-offset-2 break-all hover:text-emerald-900 transition-colors"
+              >
+                {txStatus.hash}
+              </a>
+            </div>
+          )}
+
+          {txStatus.stage === "error" && (
+            <div className="mx-5 mb-4 px-4 py-3 rounded-2xl bg-red-50 border border-red-200 text-red-600 text-sm sora-font animate-[fadeIn_0.3s_ease-out]">
+              {txStatus.message}
+            </div>
+          )}
+
+          {/* Confirm / Send button */}
           <div className="px-5 pb-5">
             <button
               id="swap-confirm"
               type="submit"
-              className="w-full py-4 rounded-2xl bg-linear-to-r from-[#1D2143] to-[#040215] text-white text-lg font-semibold sora-font shadow-[0_4px_20px_rgba(29,33,67,0.4)] hover:shadow-[0_6px_28px_rgba(29,33,67,0.6)] hover:from-[#161a38] hover:to-[#030110] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+              disabled={isLoading || !isConnected}
+              className="w-full py-4 rounded-2xl bg-linear-to-r from-[#1D2143] to-[#040215] text-white text-lg font-semibold sora-font shadow-[0_4px_20px_rgba(29,33,67,0.4)] hover:shadow-[0_6px_28px_rgba(29,33,67,0.6)] hover:from-[#161a38] hover:to-[#030110] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              Send <IoIosSend />
+              {buttonLabel()}
             </button>
           </div>
         </form>

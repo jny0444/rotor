@@ -27,8 +27,8 @@ export default function UserPane() {
 
   if (!isConnected) {
     return (
-      <div className="my-8 w-full max-w-md mx-auto px-4 sm:px-0">
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden">
+      <div className="w-full self-stretch">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden h-full flex flex-col items-center justify-center">
           <div className="flex flex-col items-center py-12 px-5">
             <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-4">
               <Image src="/stellar.svg" alt="Stellar" width={32} height={32} />
@@ -43,7 +43,7 @@ export default function UserPane() {
   }
 
   return (
-    <div className="my-8 w-full max-w-md mx-auto px-4 sm:px-0">
+    <div className="w-full">
       <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden">
         {/* Address section */}
         <div className="px-5 pt-5 pb-3">
