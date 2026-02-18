@@ -110,3 +110,86 @@ export async function submitSignedTransaction(signedXdr: string) {
     return { success: false as const, message };
   }
 }
+// ---------------------------------------------------------------------------
+// Fetch transaction history (for contribution heatmap + transaction list)
+// ---------------------------------------------------------------------------
+export interface TransactionDay {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface TransactionRecord {
+  hash: string;
+  date: string;        // YYYY-MM-DD
+  time: string;        // HH:MM:SS
+  createdAt: string;   // full ISO string
+  operationCount: number;
+  fee: string;         // in stroops
+  memo: string;
+  successful: boolean;
+  sourceAccount: string;
+}
+
+export interface TransactionHistoryResult {
+  days: TransactionDay[];
+  records: TransactionRecord[];
+}
+
+export async function fetchTransactionHistory(
+  address: string
+): Promise<TransactionHistoryResult> {
+  const dateCounts: Record<string, number> = {};
+  const records: TransactionRecord[] = [];
+
+  try {
+    // Fetch transactions using Horizon pagination (api-rpc-horizon.md skill)
+    let page = await horizon
+      .transactions()
+      .forAccount(address)
+      .order("desc")
+      .limit(200)
+      .call();
+
+    let totalFetched = 0;
+    const MAX_RECORDS = 1000; // cap to avoid very long fetches
+
+    while (page.records.length > 0 && totalFetched < MAX_RECORDS) {
+      for (const tx of page.records) {
+        const date = tx.created_at.split("T")[0];
+        const time = tx.created_at.split("T")[1]?.replace("Z", "") || "";
+        dateCounts[date] = (dateCounts[date] || 0) + 1;
+
+        records.push({
+          hash: tx.hash,
+          date,
+          time,
+          createdAt: tx.created_at,
+          operationCount: tx.operation_count,
+          fee: String(tx.fee_charged),
+          memo: tx.memo || "",
+          successful: tx.successful,
+          sourceAccount: tx.source_account,
+        });
+      }
+      totalFetched += page.records.length;
+
+      if (page.records.length < 200 || totalFetched >= MAX_RECORDS) break;
+
+      try {
+        page = await page.next();
+      } catch {
+        break; // no more pages
+      }
+    }
+  } catch {
+    // Account not found or network error — return empty
+    return { days: [], records: [] };
+  }
+
+  const days = Object.entries(dateCounts)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return { days, records };
+}
+
