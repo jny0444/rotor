@@ -1,19 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { FaRegCopy, FaCheck } from "react-icons/fa6";
+import { FaRegCopy, FaCheck, FaCloudMoon } from "react-icons/fa6";
+import { IoMoonSharp } from "react-icons/io5";
 import Image from "next/image";
 import { useWallet } from "../utils/WalletProvider";
+import { createMuxedAddress, randomMuxedId } from "../lib/stellar";
 
 export default function UserPane() {
   const { address, balance, isConnected } = useWallet();
   const [copied, setCopied] = useState(false);
+  const [useMuxed, setUseMuxed] = useState(false);
+
+  // Generate a stable muxed address for this session
+  const muxedAddress = useMemo(() => {
+    if (!address) return "";
+    try {
+      const id = randomMuxedId();
+      return createMuxedAddress(address, id);
+    } catch {
+      return "";
+    }
+  }, [address]);
+
+  const displayAddress = useMuxed && muxedAddress ? muxedAddress : address || "";
 
   const handleCopy = async () => {
-    if (!address) return;
+    if (!displayAddress) return;
     try {
-      await navigator.clipboard.writeText(address);
+      await navigator.clipboard.writeText(displayAddress);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -21,8 +37,8 @@ export default function UserPane() {
     }
   };
 
-  const truncatedAddress = address
-    ? `${address.slice(0, 6)}...${address.slice(-6)}`
+  const truncatedAddress = displayAddress
+    ? `${displayAddress.slice(0, 6)}...${displayAddress.slice(-6)}`
     : "";
 
   if (!isConnected) {
@@ -47,9 +63,34 @@ export default function UserPane() {
       <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden">
         {/* Address section */}
         <div className="px-5 pt-5 pb-3">
-          <p className="text-xs text-gray-400 sora-font mb-2 uppercase tracking-wider">
-            Account Address
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-400 sora-font uppercase tracking-wider">
+              {useMuxed ? "Muxed Address" : "Account Address"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setUseMuxed(!useMuxed)}
+              disabled={!muxedAddress}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-all cursor-pointer"
+              title={useMuxed ? "Switch to standard" : "Switch to muxed"}
+            >
+              <IoMoonSharp
+                size={14}
+                className={`transition-colors ${!useMuxed ? "text-gray-800" : "text-gray-300"}`}
+              />
+              <div className="w-7 h-4 rounded-full bg-gray-300 relative transition-colors">
+                <div
+                  className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all ${
+                    useMuxed ? "left-3.5" : "left-0.5"
+                  }`}
+                />
+              </div>
+              <FaCloudMoon
+                size={14}
+                className={`transition-colors ${useMuxed ? "text-gray-800" : "text-gray-300"}`}
+              />
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <div className="flex-1 flex items-center gap-2 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
               <span className="flex-1 text-sm text-gray-800 ibm-plex-mono-regular truncate">
@@ -75,7 +116,7 @@ export default function UserPane() {
         <div className="flex flex-col items-center py-6 px-5">
           <div className="bg-white rounded-2xl p-5 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-gray-100">
             <QRCodeSVG
-              value={address || ""}
+              value={displayAddress}
               size={200}
               level="H"
               bgColor="#ffffff"
@@ -91,8 +132,15 @@ export default function UserPane() {
             />
           </div>
           <p className="mt-3 text-xs text-gray-400 sora-font">
-            Scan to get this address
+            {useMuxed
+              ? "Scan to pay this muxed address"
+              : "Scan to get this address"}
           </p>
+          {useMuxed && (
+            <p className="mt-1 text-[10px] text-gray-300 ibm-plex-mono-regular text-center max-w-[220px]">
+              Funds sent here go to your main account with an embedded ID tag
+            </p>
+          )}
         </div>
 
         {/* Balance section */}

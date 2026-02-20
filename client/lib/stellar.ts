@@ -21,6 +21,37 @@ export const config = {
 export const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
 
 // ---------------------------------------------------------------------------
+// Muxed address helpers (M... addresses — CAP-27 / SEP-23)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a muxed M... address from a G... address and a uint64 ID.
+ * Funds sent to the M-address land in the underlying G-account;
+ * the ID is purely an off-chain tag (like an embedded memo).
+ */
+export function createMuxedAddress(gAddress: string, id: string): string {
+  // MuxedAccount needs an Account object (sequence number is irrelevant for encoding)
+  const baseAccount = new StellarSdk.Account(gAddress, "0");
+  const muxed = new StellarSdk.MuxedAccount(baseAccount, id);
+  return muxed.accountId(); // returns the M... string
+}
+
+/**
+ * Generate a random uint64 ID for a muxed address.
+ */
+export function randomMuxedId(): string {
+  // crypto.getRandomValues gives us 8 random bytes → interpret as uint64
+  const buf = new Uint8Array(8);
+  crypto.getRandomValues(buf);
+  let id = BigInt(0);
+  for (let i = 0; i < 8; i++) {
+    id = (id << BigInt(8)) | BigInt(buf[i]);
+  }
+  // Ensure it fits in uint64 (already does since we have exactly 8 bytes)
+  return id.toString();
+}
+
+// ---------------------------------------------------------------------------
 // Build an XLM payment transaction (returns unsigned XDR)
 // ---------------------------------------------------------------------------
 export async function buildPaymentTx(

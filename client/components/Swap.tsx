@@ -33,6 +33,21 @@ export default function Swap() {
     txStatus.stage
   );
 
+  // Dynamic font sizing based on integer digit count
+  const intDigits = ((amount || "0").split(".")[0] || "0").length;
+  const amountSizeClass =
+    intDigits > 12 ? "text-lg sm:text-xl" :
+    intDigits > 9  ? "text-xl sm:text-2xl" :
+    intDigits > 7  ? "text-2xl sm:text-3xl" :
+    intDigits > 5  ? "text-3xl sm:text-4xl" :
+                     "text-4xl sm:text-6xl";
+  const suffixSizeClass =
+    intDigits > 12 ? "text-sm sm:text-base" :
+    intDigits > 9  ? "text-base sm:text-lg" :
+    intDigits > 7  ? "text-lg sm:text-xl" :
+    intDigits > 5  ? "text-xl sm:text-2xl" :
+                     "text-2xl sm:text-4xl";
+
   // ---------------------------------------------------------------------------
   // QR Scanner helpers (unchanged)
   // ---------------------------------------------------------------------------
@@ -243,7 +258,7 @@ export default function Swap() {
           {/* Amount display */}
           <div className="flex flex-col items-center py-6 px-5">
             <div className="relative w-full flex justify-center">
-              <div className="text-center text-4xl sm:text-6xl font-light text-gray-800 w-full sora-font flex items-center justify-center">
+              <div className={`text-center ${amountSizeClass} font-light text-gray-800 w-full sora-font flex items-center justify-center min-w-0 overflow-hidden transition-all duration-200`}>
                 {showUsd && <span className="text-gray-400">$</span>}
                 <input
                   id="swap-amount"
@@ -257,11 +272,11 @@ export default function Swap() {
                     }
                   }}
                   placeholder="0"
-                  className="text-center text-4xl sm:text-6xl font-light text-gray-800 bg-transparent outline-none sora-font placeholder-gray-300"
-                  style={{ width: `${Math.max(1, (amount || "0").length)}ch` }}
+                  className={`text-center ${amountSizeClass} font-light text-gray-800 bg-transparent outline-none sora-font placeholder-gray-300 transition-all duration-200`}
+                  style={{ width: `${Math.max(1, (amount || "0").length + 1)}ch`, maxWidth: '80%' }}
                 />
                 {!showUsd && (
-                  <span className="text-gray-400 text-2xl sm:text-4xl ml-2">
+                  <span className={`text-gray-400 ${suffixSizeClass} ml-2 shrink-0 transition-all duration-200`}>
                     XLM
                   </span>
                 )}
@@ -295,6 +310,7 @@ export default function Swap() {
           </div>
 
           {/* Token selector row */}
+
           <div className="mx-5 mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 bg-gray-50 rounded-2xl px-4 py-3 border border-gray-100">
             <div className="flex items-center gap-3">
               <div className="rounded-xl flex items-center justify-center overflow-hidden shadow-sm">
@@ -311,7 +327,7 @@ export default function Swap() {
                   Stellar
                 </span>
                 <span className="text-xs text-gray-400 ibm-plex-mono-regular">
-                  {balance} XLM
+                  {balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} XLM
                 </span>
               </div>
             </div>
@@ -329,6 +345,13 @@ export default function Swap() {
                 className="px-3.5 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:border-gray-300 active:scale-95 transition-all sora-font cursor-pointer shadow-sm"
               >
                 MAX
+              </button>
+              <button
+                type="button"
+                onClick={() => setAmount("")}
+                className="px-3.5 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200 active:scale-95 transition-all sora-font cursor-pointer shadow-sm"
+              >
+                CLR
               </button>
             </div>
           </div>
