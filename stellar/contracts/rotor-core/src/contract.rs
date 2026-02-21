@@ -1,11 +1,11 @@
-use soroban_sdk::{contract, contractimpl, Env};
+use soroban_sdk::{contract, contractimpl, Bytes, BytesN, Env};
 
 #[contract]
 pub struct RotorCore;
 
 #[contractimpl]
 impl RotorCore {
-    pub fn deposit(e: &Env, amount: i128) {}
+    pub fn deposit(e: &Env, commitment: BytesN<32>) {}
 
-    pub fn withdraw() {}
+    pub fn withdraw(e: &Env, proof: Bytes, root: BytesN<32>, nullifier_hash: BytesN<32>) {}
 }

@@ -11,7 +11,7 @@ import { createMuxedAddress, randomMuxedId } from "../lib/stellar";
 export default function UserPane() {
   const { address, balance, isConnected } = useWallet();
   const [copied, setCopied] = useState(false);
-  const [useMuxed, setUseMuxed] = useState(false);
+  const [useMuxed, setUseMuxed] = useState(true);
 
   // Generate a stable muxed address for this session
   const muxedAddress = useMemo(() => {

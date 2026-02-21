@@ -9,7 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aztec/bb.js": "3.0.0-nightly.20251104",
     "@creit-tech/stellar-wallets-kit": "jsr:2.0.0-beta.9",
+    "@noir-lang/noir_js": "1.0.0-beta.15",
     "@stellar/stellar-sdk": "^14.5.0",
     "html5-qrcode": "^2.3.8",
     "next": "16.1.6",

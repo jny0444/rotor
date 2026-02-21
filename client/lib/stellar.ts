@@ -7,6 +7,7 @@
  *  - buildPaymentTx  → returns unsigned XDR
  *  - submitSignedTransaction → submits signed XDR via Horizon
  */
+import { Barretenberg } from "@aztec/bb.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
 
 // ---------------------------------------------------------------------------

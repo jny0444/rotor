@@ -1,6 +1,7 @@
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 import Swap from "@/components/Swap";
+import Image from "next/image";
 
 export default function Home() {
   return (
@@ -19,6 +20,13 @@ export default function Home() {
         <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6">
           <div className="flex flex-row items-center text-6xl sm:text-6xl md:text-8xl bricolage-grotesque-font">
             <p>Go Stealth</p>
+            {/* <Image
+              src="/rotor-icon-hd.svg"
+              alt="Rotor Icon"
+              width={1}
+              height={1}
+              className="w-28 h-28 mx-4"
+            /> */}
           </div>
           <div className="flex flex-row items-center text-6xl sm:text-6xl md:text-8xl bricolage-grotesque-font">
             <p>on Stellar</p>
@@ -30,4 +38,3 @@ export default function Home() {
     </div>
   );
 }
-
