@@ -8,35 +8,24 @@ use soroban_sdk::{
 // ---------------------------------------------------------------------------
 #[contracttype]
 pub enum DataKey {
-    // Admin / config
-    Relayer, // Address: authorized relayer (pool account)
-    Depth,   // u32: tree depth (set once in constructor)
-
-    // Merkle tree
+    Admin,              // Address: contract admin
+    Depth,              // u32: tree depth
     NextLeafIndex,      // u32: next leaf to insert
     CurrentRootIndex,   // u32: position in root ring buffer
     CachedSubtree(u32), // BytesN<32>: cached subtree at level i
     Root(u32),          // BytesN<32>: root at ring buffer position i
     Leaf(u32),          // BytesN<32>: commitment at leaf index i
-
-    // Deposits
-    DepositAmount(u32), // i128: amount deposited for leaf index i (stroops)
-
-    // Nullifier tracking
-    Nullifier(BytesN<32>), // bool: whether a nullifier_hash has been spent
 }
 
 const ROOT_HISTORY_SIZE: u32 = 30;
-const TREE_DEPTH: u32 = 20;
 
 // ---------------------------------------------------------------------------
-// Precomputed zero hashes for the empty Merkle tree.
+// Precomputed zero hashes for the empty Merkle tree (depth 20).
 //
 // zeros(0) = keccak256("cyfrin") % BN254_FIELD_SIZE
-// zeros(i+1) = hash(zeros(i), zeros(i))
+// zeros(i+1) = Poseidon2(zeros(i), zeros(i))
 //
-// These MUST match the hash function used in the Noir circuit.
-// Values copied from the Solidity IncrementalMerkleTree contract.
+// These MUST match the Poseidon2 hash used in the Noir circuit.
 // ---------------------------------------------------------------------------
 const ZEROS: [[u8; 32]; 20] = [
     hex("0d823319708ab99ec915efd4f7e03d11ca1790918e8f04cd14100aceca2aa9ff"),
@@ -88,166 +77,55 @@ const fn hex_digit(c: u8) -> u8 {
 // Contract
 // ---------------------------------------------------------------------------
 #[contract]
-pub struct RotorCore;
+pub struct IncrementalMerkleTree;
 
 #[contractimpl]
-impl RotorCore {
-    /// Initialize the mixer contract.
+impl IncrementalMerkleTree {
+    /// Initialize the Merkle tree with the given depth.
     ///
-    /// - `relayer`: The address of the relayer (also the pool account that
-    ///   holds deposited XLM and sends withdrawals).
-    pub fn __constructor(env: Env, relayer: Address) {
-        env.storage().instance().set(&DataKey::Relayer, &relayer);
-        env.storage().instance().set(&DataKey::Depth, &TREE_DEPTH);
+    /// - `admin`: address authorized to insert leaves
+    /// - `depth`: tree depth (max 20, determines max leaves = 2^depth)
+    pub fn __constructor(env: Env, admin: Address, depth: u32) {
+        assert!(depth > 0 && depth <= 20, "depth must be 1..=20");
+
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Depth, &depth);
         env.storage().instance().set(&DataKey::NextLeafIndex, &0u32);
         env.storage()
             .instance()
             .set(&DataKey::CurrentRootIndex, &0u32);
 
-        // Initial root = zeros(TREE_DEPTH - 1) — root of an empty tree
-        let initial_root = BytesN::from_array(&env, &ZEROS[TREE_DEPTH as usize - 1]);
+        // Initial root = zeros(depth - 1) — root of an empty tree
+        let initial_root = BytesN::from_array(&env, &ZEROS[depth as usize - 1]);
         env.storage()
             .persistent()
             .set(&DataKey::Root(0), &initial_root);
     }
 
     // -----------------------------------------------------------------------
-    // DEPOSIT
+    // WRITE FUNCTIONS
     // -----------------------------------------------------------------------
 
-    /// Record a deposit commitment in the Merkle tree.
+    /// Insert a leaf into the Merkle tree. Returns the leaf index.
     ///
-    /// The depositor:
-    /// 1. Generates (nullifier, secret) off-chain
-    /// 2. Computes commitment = Poseidon2(nullifier, secret)
-    /// 3. Transfers XLM to the relayer's pool account (off-chain)
-    /// 4. Calls deposit(commitment, amount) to record the commitment
-    ///
-    /// Amount is in stroops (1 XLM = 10,000,000 stroops).
-    /// The actual XLM transfer happens off-chain to the relayer's pool account.
-    pub fn deposit(env: Env, depositor: Address, commitment: BytesN<32>, amount: i128) -> u32 {
-        depositor.require_auth();
-        assert!(amount > 0, "amount must be positive");
-
-        // Insert the commitment into the Merkle tree
-        let leaf_index = Self::insert_leaf(&env, commitment.clone());
-
-        // Track the deposit amount for this leaf
-        env.storage()
-            .persistent()
-            .set(&DataKey::DepositAmount(leaf_index), &amount);
-
-        log!(&env, "Deposit: leaf={}, amount={}", leaf_index, amount);
-
-        leaf_index
-    }
-
-    // -----------------------------------------------------------------------
-    // WITHDRAW
-    // -----------------------------------------------------------------------
-
-    /// Record a withdrawal. Called by the relayer AFTER verifying the ZK proof.
-    ///
-    /// The relayer:
-    /// 1. Receives (proof, publicInputs) from the client
-    /// 2. Verifies the proof using bb.js
-    /// 3. Calls this function to mark the nullifier as spent
-    /// 4. Sends XLM from its pool account to the recipient (off-chain)
-    ///
-    /// The contract checks:
-    /// - Caller is the authorized relayer
-    /// - Root is in the root history
-    /// - Nullifier hash has not been spent
-    pub fn withdraw(
-        env: Env,
-        root: BytesN<32>,
-        nullifier_hash: BytesN<32>,
-        recipient: Address,
-        amount: i128,
-    ) {
-        // Only the relayer can call withdraw
-        let relayer: Address = env
+    /// Only the admin can insert leaves.
+    pub fn insert(env: Env, caller: Address, leaf: BytesN<32>) -> u32 {
+        let admin: Address = env
             .storage()
             .instance()
-            .get(&DataKey::Relayer)
-            .expect("relayer not set");
-        relayer.require_auth();
+            .get(&DataKey::Admin)
+            .expect("admin not set");
+        assert!(caller == admin, "only admin can insert");
+        caller.require_auth();
 
-        assert!(amount > 0, "amount must be positive");
-
-        // Check: root must be in the known root history
-        assert!(Self::is_known_root(&env, &root), "unknown root");
-
-        // Check: nullifier must not be spent (prevents double-withdraw)
-        let nullifier_key = DataKey::Nullifier(nullifier_hash.clone());
-        let already_spent: bool = env
-            .storage()
-            .persistent()
-            .get(&nullifier_key)
-            .unwrap_or(false);
-        assert!(!already_spent, "nullifier already spent");
-
-        // Mark nullifier as spent
-        env.storage().persistent().set(&nullifier_key, &true);
-
-        // The relayer sends the XLM to the recipient off-chain
-        // after this transaction succeeds.
-        log!(
-            &env,
-            "Withdraw approved: recipient={}, amount={}",
-            recipient,
-            amount
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // VIEW FUNCTIONS
-    // -----------------------------------------------------------------------
-
-    /// Get the latest Merkle root.
-    pub fn get_latest_root(env: Env) -> BytesN<32> {
-        let idx: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::CurrentRootIndex)
-            .unwrap();
-        env.storage().persistent().get(&DataKey::Root(idx)).unwrap()
-    }
-
-    /// Get the next leaf index (= number of deposits so far).
-    pub fn get_next_index(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::NextLeafIndex)
-            .unwrap()
-    }
-
-    /// Check if a root is in the history.
-    pub fn is_valid_root(env: Env, root: BytesN<32>) -> bool {
-        Self::is_known_root(&env, &root)
-    }
-
-    /// Check if a nullifier has been spent.
-    pub fn is_spent(env: Env, nullifier_hash: BytesN<32>) -> bool {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Nullifier(nullifier_hash))
-            .unwrap_or(false)
-    }
-
-    // -----------------------------------------------------------------------
-    // INTERNAL: Merkle tree operations
-    // -----------------------------------------------------------------------
-
-    /// Insert a leaf into the incremental Merkle tree.
-    fn insert_leaf(env: &Env, leaf: BytesN<32>) -> u32 {
+        let depth: u32 = env.storage().instance().get(&DataKey::Depth).unwrap();
         let next_index: u32 = env
             .storage()
             .instance()
             .get(&DataKey::NextLeafIndex)
             .unwrap();
 
-        let max_leaves = 1u32 << TREE_DEPTH;
+        let max_leaves = 1u32 << depth;
         assert!(next_index < max_leaves, "merkle tree is full");
 
         // Store the leaf
@@ -258,27 +136,27 @@ impl RotorCore {
         let mut current_index = next_index;
         let mut current_hash = leaf;
 
-        for i in 0..TREE_DEPTH {
+        for i in 0..depth {
             if current_index % 2 == 0 {
-                // Even: current is left child, right is zero
-                let right = BytesN::from_array(env, &ZEROS[i as usize]);
+                // Even: current is left child, right sibling is zero at this level
+                let right = BytesN::from_array(&env, &ZEROS[i as usize]);
                 env.storage()
                     .persistent()
                     .set(&DataKey::CachedSubtree(i), &current_hash);
-                current_hash = Self::hash_pair(env, &current_hash, &right);
+                current_hash = Self::hash_left_right(&env, &current_hash, &right);
             } else {
-                // Odd: current is right child, left is cached subtree
+                // Odd: current is right child, left sibling is cached subtree
                 let left: BytesN<32> = env
                     .storage()
                     .persistent()
                     .get(&DataKey::CachedSubtree(i))
                     .unwrap();
-                current_hash = Self::hash_pair(env, &left, &current_hash);
+                current_hash = Self::hash_left_right(&env, &left, &current_hash);
             }
             current_index /= 2;
         }
 
-        // Store new root in ring buffer
+        // Store the new root in the ring buffer
         let current_root_idx: u32 = env
             .storage()
             .instance()
@@ -296,13 +174,19 @@ impl RotorCore {
             .instance()
             .set(&DataKey::NextLeafIndex, &(next_index + 1));
 
+        log!(&env, "Leaf inserted at index {}", next_index);
+
         next_index
     }
 
-    /// Check if a root exists in the root history ring buffer.
-    fn is_known_root(env: &Env, root: &BytesN<32>) -> bool {
-        let zero = BytesN::from_array(env, &[0u8; 32]);
-        if *root == zero {
+    // -----------------------------------------------------------------------
+    // VIEW FUNCTIONS
+    // -----------------------------------------------------------------------
+
+    /// Check if a root exists in the root history (last 30 roots).
+    pub fn is_known_root(env: Env, root: BytesN<32>) -> bool {
+        let zero = BytesN::from_array(&env, &[0u8; 32]);
+        if root == zero {
             return false;
         }
 
@@ -316,7 +200,7 @@ impl RotorCore {
         loop {
             let stored: Option<BytesN<32>> = env.storage().persistent().get(&DataKey::Root(i));
             if let Some(r) = stored {
-                if r == *root {
+                if r == root {
                     return true;
                 }
             }
@@ -331,11 +215,51 @@ impl RotorCore {
         false
     }
 
-    /// Hash two 32-byte field elements using Poseidon2.
+    /// Get the latest Merkle root.
+    pub fn get_latest_root(env: Env) -> BytesN<32> {
+        let idx: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentRootIndex)
+            .unwrap();
+        env.storage().persistent().get(&DataKey::Root(idx)).unwrap()
+    }
+
+    /// Get the next leaf index (= total number of leaves inserted).
+    pub fn get_next_index(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::NextLeafIndex)
+            .unwrap()
+    }
+
+    /// Get the tree depth.
+    pub fn get_depth(env: Env) -> u32 {
+        env.storage().instance().get(&DataKey::Depth).unwrap()
+    }
+
+    /// Get a specific leaf by index.
+    pub fn get_leaf(env: Env, index: u32) -> BytesN<32> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Leaf(index))
+            .expect("leaf not found")
+    }
+
+    /// Get the zero element at level i.
+    pub fn get_zero(env: Env, level: u32) -> BytesN<32> {
+        assert!((level as usize) < ZEROS.len(), "level out of bounds");
+        BytesN::from_array(&env, &ZEROS[level as usize])
+    }
+
+    // -----------------------------------------------------------------------
+    // INTERNAL: Poseidon2 hashing
+    // -----------------------------------------------------------------------
+
+    /// Hash two 32-byte field elements: Poseidon2(left, right)
     ///
-    /// This matches the Noir circuit: `Poseidon2::hash([left, right], 2)`
-    /// using t=3 (rate=2, capacity=1).
-    fn hash_pair(env: &Env, left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
+    /// Matches Noir circuit: `Poseidon2::hash([left, right], 2)` with t=3.
+    fn hash_left_right(env: &Env, left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
         let left_bytes = soroban_sdk::Bytes::from_slice(env, &left.to_array());
         let right_bytes = soroban_sdk::Bytes::from_slice(env, &right.to_array());
 
@@ -351,5 +275,10 @@ impl RotorCore {
             arr[i] = result_bytes.get(i as u32).unwrap();
         }
         BytesN::from_array(env, &arr)
+    }
+
+    /// Public wrapper for hash_left_right — useful for testing.
+    pub fn hash_pair(env: Env, left: BytesN<32>, right: BytesN<32>) -> BytesN<32> {
+        Self::hash_left_right(&env, &left, &right)
     }
 }

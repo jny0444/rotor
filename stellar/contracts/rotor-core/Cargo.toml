@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+soroban-poseidon = { git = "https://github.com/stellar/rs-soroban-poseidon" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
