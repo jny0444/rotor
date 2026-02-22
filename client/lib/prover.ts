@@ -11,22 +11,21 @@ const circuit = require("./circuit.json") as CompiledCircuit;
 
 /** Inputs needed to generate a withdrawal proof */
 export interface WithdrawProofInputs {
-  // Public inputs
-  root: string;             // Current Merkle root (hex, 32 bytes)
-  nullifierHash: string;    // Poseidon2(nullifier) (hex, 32 bytes)
-  recipient: string;        // Recipient address as a field element (hex, 32 bytes)
+  root: string;
+  nullifierHash: string;
+  recipient: string;
+  amount: string;           // Amount as field element (hex), same as in commitment
 
-  // Private inputs
-  nullifier: string;        // The secret nullifier (hex, 32 bytes)
-  secret: string;           // The secret (hex, 32 bytes)
-  merkleProof: string[];    // 20 sibling hashes (hex, 32 bytes each)
-  isEven: boolean[];        // 20 booleans indicating path direction
+  nullifier: string;
+  secret: string;
+  merkleProof: string[];
+  isEven: boolean[];
 }
 
-/** Result of proof generation */
+/** Result of proof generation. publicInputs = [root, nullifierHash, recipient, amount]. */
 export interface WithdrawProofResult {
-  proof: Uint8Array;        // The ZK proof bytes
-  publicInputs: string[];   // The public inputs (root, nullifierHash, recipient)
+  proof: Uint8Array;
+  publicInputs: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +55,7 @@ export async function generateWithdrawProof(
     root: inputs.root,
     nullifier_hash: inputs.nullifierHash,
     recipient: inputs.recipient,
+    amount: inputs.amount,
     nullifier: inputs.nullifier,
     secret: inputs.secret,
     merkleProof: inputs.merkleProof,
@@ -63,12 +63,20 @@ export async function generateWithdrawProof(
   };
 
   // 1. Execute the circuit (generates witness + validates constraints)
+  console.log("[Prover] Executing Noir circuit to generate witness...");
   const noir = new Noir(circuit);
   const { witness } = await noir.execute(circuitInputs);
+  console.log("[Prover] Witness generation successful.");
 
-  // 2. Generate the UltraHonk proof
+  // 2. Generate the proof using Barretenberg (UltraHonkBackend)
+  // Note: Powers of Tau / CRS (Common Reference String) is automatically
+  // initialized, fetched, and cached by bb.js during backend construction/proving.
+  console.log("[Prover] Initializing Barretenberg UltraHonkBackend (fetching Powers of Tau SRS if needed)...");
   const backend = new UltraHonkBackend(circuit.bytecode);
+  
+  console.log("[Prover] Generating ZK proof with Barretenberg...");
   const proofData: ProofData = await backend.generateProof(witness);
+  console.log("[Prover] ZK Proof successfully generated! Proof length:", proofData.proof.length, "bytes.");
 
   // Clean up
   await backend.destroy();

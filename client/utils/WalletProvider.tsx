@@ -55,13 +55,17 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<number>(0);
   const [kitReady, setKitReady] = useState(false);
 
-  // Fetch balance whenever address changes
+  // Fetch balance whenever address changes, then poll every 10s
   useEffect(() => {
-    if (address) {
-      fetchXlmBalance(address).then(setBalance);
-    } else {
+    if (!address) {
       setBalance(0);
+      return;
     }
+    fetchXlmBalance(address).then(setBalance);
+    const id = setInterval(() => {
+      fetchXlmBalance(address).then(setBalance);
+    }, 10_000);
+    return () => clearInterval(id);
   }, [address]);
 
   useEffect(() => {

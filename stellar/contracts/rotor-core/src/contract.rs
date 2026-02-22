@@ -1,6 +1,7 @@
 use soroban_poseidon::poseidon2_hash;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, crypto::BnScalar, log, vec, Address, BytesN, Env, U256,
+    contract, contractimpl, contracttype, crypto::BnScalar, log, token, vec, Address, BytesN, Env,
+    U256,
 };
 
 // ---------------------------------------------------------------------------
@@ -8,21 +9,14 @@ use soroban_sdk::{
 // ---------------------------------------------------------------------------
 #[contracttype]
 pub enum DataKey {
-    // Admin / config
-    Relayer, // Address: authorized relayer (pool account)
-    Depth,   // u32: tree depth (set once in constructor)
-
-    // Merkle tree
+    Relayer,            // Address: authorized relayer (submits withdrawals)
+    Token,              // Address: SAC address for the deposited asset (e.g. native XLM)
+    Depth,              // u32: tree depth (set once in constructor)
     NextLeafIndex,      // u32: next leaf to insert
     CurrentRootIndex,   // u32: position in root ring buffer
     CachedSubtree(u32), // BytesN<32>: cached subtree at level i
     Root(u32),          // BytesN<32>: root at ring buffer position i
     Leaf(u32),          // BytesN<32>: commitment at leaf index i
-
-    // Deposits
-    DepositAmount(u32), // i128: amount deposited for leaf index i (stroops)
-
-    // Nullifier tracking
     Nullifier(BytesN<32>), // bool: whether a nullifier_hash has been spent
 }
 
@@ -33,10 +27,9 @@ const TREE_DEPTH: u32 = 20;
 // Precomputed zero hashes for the empty Merkle tree.
 //
 // zeros(0) = keccak256("cyfrin") % BN254_FIELD_SIZE
-// zeros(i+1) = hash(zeros(i), zeros(i))
+// zeros(i+1) = Poseidon2(zeros(i), zeros(i))
 //
 // These MUST match the hash function used in the Noir circuit.
-// Values copied from the Solidity IncrementalMerkleTree contract.
 // ---------------------------------------------------------------------------
 const ZEROS: [[u8; 32]; 20] = [
     hex("0d823319708ab99ec915efd4f7e03d11ca1790918e8f04cd14100aceca2aa9ff"),
@@ -94,17 +87,18 @@ pub struct RotorCore;
 impl RotorCore {
     /// Initialize the mixer contract.
     ///
-    /// - `relayer`: The address of the relayer (also the pool account that
-    ///   holds deposited XLM and sends withdrawals).
-    pub fn __constructor(env: Env, relayer: Address) {
+    /// - `relayer`: address authorized to submit withdrawals on behalf of recipients.
+    /// - `token`:   SAC address for the deposited asset (native XLM on testnet:
+    ///              CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC).
+    pub fn __constructor(env: Env, relayer: Address, token: Address) {
         env.storage().instance().set(&DataKey::Relayer, &relayer);
+        env.storage().instance().set(&DataKey::Token, &token);
         env.storage().instance().set(&DataKey::Depth, &TREE_DEPTH);
         env.storage().instance().set(&DataKey::NextLeafIndex, &0u32);
         env.storage()
             .instance()
             .set(&DataKey::CurrentRootIndex, &0u32);
 
-        // Initial root = zeros(TREE_DEPTH - 1) — root of an empty tree
         let initial_root = BytesN::from_array(&env, &ZEROS[TREE_DEPTH as usize - 1]);
         env.storage()
             .persistent()
@@ -115,29 +109,19 @@ impl RotorCore {
     // DEPOSIT
     // -----------------------------------------------------------------------
 
-    /// Record a deposit commitment in the Merkle tree.
+    /// Record a commitment in the Merkle tree.
     ///
-    /// The depositor:
-    /// 1. Generates (nullifier, secret) off-chain
-    /// 2. Computes commitment = Poseidon2(nullifier, secret)
-    /// 3. Transfers XLM to the relayer's pool account (off-chain)
-    /// 4. Calls deposit(commitment, amount) to record the commitment
+    /// The token transfer is handled separately by the frontend — the user
+    /// calls the SAC's `transfer()` directly to fund the contract, then
+    /// calls this function to store the commitment on-chain.
     ///
-    /// Amount is in stroops (1 XLM = 10,000,000 stroops).
-    /// The actual XLM transfer happens off-chain to the relayer's pool account.
-    pub fn deposit(env: Env, depositor: Address, commitment: BytesN<32>, amount: i128) -> u32 {
+    /// This keeps the deposit function free of amount information.
+    pub fn deposit(env: Env, depositor: Address, commitment: BytesN<32>) -> u32 {
         depositor.require_auth();
-        assert!(amount > 0, "amount must be positive");
 
-        // Insert the commitment into the Merkle tree
         let leaf_index = Self::insert_leaf(&env, commitment.clone());
 
-        // Track the deposit amount for this leaf
-        env.storage()
-            .persistent()
-            .set(&DataKey::DepositAmount(leaf_index), &amount);
-
-        log!(&env, "Deposit: leaf={}, amount={}", leaf_index, amount);
+        log!(&env, "Deposit: leaf={}", leaf_index);
 
         leaf_index
     }
@@ -146,26 +130,27 @@ impl RotorCore {
     // WITHDRAW
     // -----------------------------------------------------------------------
 
-    /// Record a withdrawal. Called by the relayer AFTER verifying the ZK proof.
+    /// Withdraw XLM from the mixer to a recipient.
     ///
-    /// The relayer:
-    /// 1. Receives (proof, publicInputs) from the client
-    /// 2. Verifies the proof using bb.js
-    /// 3. Calls this function to mark the nullifier as spent
-    /// 4. Sends XLM from its pool account to the recipient (off-chain)
+    /// Called by the relayer AFTER verifying the ZK proof off-chain.
     ///
-    /// The contract checks:
-    /// - Caller is the authorized relayer
-    /// - Root is in the root history
-    /// - Nullifier hash has not been spent
+    /// `proof_amount` is the BN254 field element from the ZK proof's public
+    /// inputs that encodes the withdrawal amount in stroops. The contract
+    /// derives the actual i128 amount by interpreting the lower 16 bytes of
+    /// the 32-byte big-endian field element.
+    ///
+    /// The contract:
+    /// 1. Verifies the caller is the authorized relayer
+    /// 2. Derives the amount from `proof_amount`
+    /// 3. Ensures the nullifier has not been spent (prevents double-withdraw)
+    /// 4. Marks the nullifier as spent
+    /// 5. Transfers XLM from the contract to the recipient via SAC
     pub fn withdraw(
         env: Env,
-        root: BytesN<32>,
         nullifier_hash: BytesN<32>,
         recipient: Address,
-        amount: i128,
+        proof_amount: BytesN<32>,
     ) {
-        // Only the relayer can call withdraw
         let relayer: Address = env
             .storage()
             .instance()
@@ -173,12 +158,9 @@ impl RotorCore {
             .expect("relayer not set");
         relayer.require_auth();
 
+        let amount = Self::field_to_amount(&proof_amount);
         assert!(amount > 0, "amount must be positive");
 
-        // Check: root must be in the known root history
-        assert!(Self::is_known_root(&env, &root), "unknown root");
-
-        // Check: nullifier must not be spent (prevents double-withdraw)
         let nullifier_key = DataKey::Nullifier(nullifier_hash.clone());
         let already_spent: bool = env
             .storage()
@@ -187,24 +169,41 @@ impl RotorCore {
             .unwrap_or(false);
         assert!(!already_spent, "nullifier already spent");
 
-        // Mark nullifier as spent
         env.storage().persistent().set(&nullifier_key, &true);
 
-        // The relayer sends the XLM to the recipient off-chain
-        // after this transaction succeeds.
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let token_client = token::Client::new(&env, &token_addr);
+        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
+
         log!(
             &env,
-            "Withdraw approved: recipient={}, amount={}",
+            "Withdraw: recipient={}, amount={}",
             recipient,
             amount
         );
+    }
+
+    /// Interpret the lower 16 bytes of a 32-byte big-endian field element as i128.
+    /// XLM amounts fit comfortably within i128 (max supply ~5×10^17 stroops).
+    fn field_to_amount(field: &BytesN<32>) -> i128 {
+        let arr = field.to_array();
+        let mut v: i128 = 0;
+        let mut i = 16usize;
+        while i < 32 {
+            v = (v << 8) | (arr[i] as i128);
+            i += 1;
+        }
+        v
     }
 
     // -----------------------------------------------------------------------
     // VIEW FUNCTIONS
     // -----------------------------------------------------------------------
 
-    /// Get the latest Merkle root.
     pub fn get_latest_root(env: Env) -> BytesN<32> {
         let idx: u32 = env
             .storage()
@@ -214,7 +213,6 @@ impl RotorCore {
         env.storage().persistent().get(&DataKey::Root(idx)).unwrap()
     }
 
-    /// Get the next leaf index (= number of deposits so far).
     pub fn get_next_index(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -222,12 +220,10 @@ impl RotorCore {
             .unwrap()
     }
 
-    /// Check if a root is in the history.
     pub fn is_valid_root(env: Env, root: BytesN<32>) -> bool {
         Self::is_known_root(&env, &root)
     }
 
-    /// Check if a nullifier has been spent.
     pub fn is_spent(env: Env, nullifier_hash: BytesN<32>) -> bool {
         env.storage()
             .persistent()
@@ -235,11 +231,27 @@ impl RotorCore {
             .unwrap_or(false)
     }
 
+    pub fn get_token(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set")
+    }
+
+    pub fn get_balance(env: Env) -> i128 {
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let token_client = token::Client::new(&env, &token_addr);
+        token_client.balance(&env.current_contract_address())
+    }
+
     // -----------------------------------------------------------------------
     // INTERNAL: Merkle tree operations
     // -----------------------------------------------------------------------
 
-    /// Insert a leaf into the incremental Merkle tree.
     fn insert_leaf(env: &Env, leaf: BytesN<32>) -> u32 {
         let next_index: u32 = env
             .storage()
@@ -250,7 +262,6 @@ impl RotorCore {
         let max_leaves = 1u32 << TREE_DEPTH;
         assert!(next_index < max_leaves, "merkle tree is full");
 
-        // Store the leaf
         env.storage()
             .persistent()
             .set(&DataKey::Leaf(next_index), &leaf);
@@ -260,14 +271,12 @@ impl RotorCore {
 
         for i in 0..TREE_DEPTH {
             if current_index % 2 == 0 {
-                // Even: current is left child, right is zero
                 let right = BytesN::from_array(env, &ZEROS[i as usize]);
                 env.storage()
                     .persistent()
                     .set(&DataKey::CachedSubtree(i), &current_hash);
                 current_hash = Self::hash_pair(env, &current_hash, &right);
             } else {
-                // Odd: current is right child, left is cached subtree
                 let left: BytesN<32> = env
                     .storage()
                     .persistent()
@@ -278,7 +287,6 @@ impl RotorCore {
             current_index /= 2;
         }
 
-        // Store new root in ring buffer
         let current_root_idx: u32 = env
             .storage()
             .instance()
@@ -299,7 +307,6 @@ impl RotorCore {
         next_index
     }
 
-    /// Check if a root exists in the root history ring buffer.
     fn is_known_root(env: &Env, root: &BytesN<32>) -> bool {
         let zero = BytesN::from_array(env, &[0u8; 32]);
         if *root == zero {
@@ -331,10 +338,6 @@ impl RotorCore {
         false
     }
 
-    /// Hash two 32-byte field elements using Poseidon2.
-    ///
-    /// This matches the Noir circuit: `Poseidon2::hash([left, right], 2)`
-    /// using t=3 (rate=2, capacity=1).
     fn hash_pair(env: &Env, left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
         let left_bytes = soroban_sdk::Bytes::from_slice(env, &left.to_array());
         let right_bytes = soroban_sdk::Bytes::from_slice(env, &right.to_array());

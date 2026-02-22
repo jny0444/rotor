@@ -1,71 +1,189 @@
 /**
  * Stellar SDK configuration and transaction utilities.
  *
- * Following the "frontend-stellar-sdk" skill from .agents/:
- *  - Horizon for classic payment transactions
- *  - Testnet by default (switch NEXT_PUBLIC_STELLAR_NETWORK to "mainnet" for production)
- *  - buildPaymentTx  → returns unsigned XDR
- *  - submitSignedTransaction → submits signed XDR via Horizon
+ * Supports both:
+ *  - Classic Horizon transactions (payments, history)
+ *  - Soroban contract invocations (deposit via rotor-core)
  */
-import { Barretenberg } from "@aztec/bb.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
 
 // ---------------------------------------------------------------------------
-// Network configuration — hardcoded to TESTNET
+// Network configuration
 // ---------------------------------------------------------------------------
 export const config = {
+  rpcUrl: "https://soroban-testnet.stellar.org",
   horizonUrl: "https://horizon-testnet.stellar.org",
   networkPassphrase: "Test SDF Network ; September 2015",
   friendbotUrl: "https://friendbot.stellar.org",
 };
 
 export const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
+export const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
+
+// Rotor contract and XLM SAC on testnet
+export const ROTOR_CONTRACT_ID =
+  process.env.NEXT_PUBLIC_ROTOR_CONTRACT_ID || "";
+export const XLM_SAC_ID =
+  process.env.NEXT_PUBLIC_XLM_SAC_ID ||
+  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 
 // ---------------------------------------------------------------------------
-// Muxed address helpers (M... addresses — CAP-27 / SEP-23)
+// Muxed address helpers (CAP-27 / SEP-23)
 // ---------------------------------------------------------------------------
 
-/**
- * Create a muxed M... address from a G... address and a uint64 ID.
- * Funds sent to the M-address land in the underlying G-account;
- * the ID is purely an off-chain tag (like an embedded memo).
- */
 export function createMuxedAddress(gAddress: string, id: string): string {
-  // MuxedAccount needs an Account object (sequence number is irrelevant for encoding)
   const baseAccount = new StellarSdk.Account(gAddress, "0");
   const muxed = new StellarSdk.MuxedAccount(baseAccount, id);
-  return muxed.accountId(); // returns the M... string
+  return muxed.accountId();
 }
 
-/**
- * Generate a random uint64 ID for a muxed address.
- */
 export function randomMuxedId(): string {
-  // crypto.getRandomValues gives us 8 random bytes → interpret as uint64
   const buf = new Uint8Array(8);
   crypto.getRandomValues(buf);
   let id = BigInt(0);
   for (let i = 0; i < 8; i++) {
     id = (id << BigInt(8)) | BigInt(buf[i]);
   }
-  // Ensure it fits in uint64 (already does since we have exactly 8 bytes)
   return id.toString();
 }
 
 // ---------------------------------------------------------------------------
-// Build an XLM payment transaction (returns unsigned XDR)
+// Soroban: Transfer XLM to the rotor-core contract via the SAC
+//
+// This is a direct token transfer — separate from the deposit call — so
+// the deposit function itself carries no amount information.
+// ---------------------------------------------------------------------------
+export async function buildFundContractTx(
+  depositorAddress: string,
+  amountStroops: number
+): Promise<string> {
+  if (!ROTOR_CONTRACT_ID) {
+    throw new Error("NEXT_PUBLIC_ROTOR_CONTRACT_ID is not set in environment");
+  }
+
+  const account = await rpc.getAccount(depositorAddress);
+  const sacContract = new StellarSdk.Contract(XLM_SAC_ID);
+
+  const tx = new StellarSdk.TransactionBuilder(account, {
+    fee: "1000000",
+    networkPassphrase: config.networkPassphrase,
+  })
+    .addOperation(
+      sacContract.call(
+        "transfer",
+        new StellarSdk.Address(depositorAddress).toScVal(),
+        new StellarSdk.Address(ROTOR_CONTRACT_ID).toScVal(),
+        StellarSdk.nativeToScVal(BigInt(amountStroops), { type: "i128" })
+      )
+    )
+    .setTimeout(180)
+    .build();
+
+  const prepared = await rpc.prepareTransaction(tx);
+  return prepared.toXDR();
+}
+
+// ---------------------------------------------------------------------------
+// Soroban: Record a commitment in the rotor-core Merkle tree
+//
+// Calls: deposit(depositor, commitment) — no amount parameter.
+// The token transfer is handled separately by buildFundContractTx.
+// ---------------------------------------------------------------------------
+export async function buildDepositTx(
+  depositorAddress: string,
+  commitmentHex: string
+): Promise<string> {
+  if (!ROTOR_CONTRACT_ID) {
+    throw new Error("NEXT_PUBLIC_ROTOR_CONTRACT_ID is not set in environment");
+  }
+
+  const account = await rpc.getAccount(depositorAddress);
+  const contract = new StellarSdk.Contract(ROTOR_CONTRACT_ID);
+
+  const commitmentBytes = Buffer.from(
+    commitmentHex.replace(/^0x/, ""),
+    "hex"
+  );
+
+  const tx = new StellarSdk.TransactionBuilder(account, {
+    fee: "1000000",
+    networkPassphrase: config.networkPassphrase,
+  })
+    .addOperation(
+      contract.call(
+        "deposit",
+        new StellarSdk.Address(depositorAddress).toScVal(),
+        StellarSdk.xdr.ScVal.scvBytes(commitmentBytes)
+      )
+    )
+    .setTimeout(180)
+    .build();
+
+  const prepared = await rpc.prepareTransaction(tx);
+  return prepared.toXDR();
+}
+
+// ---------------------------------------------------------------------------
+// Submit a signed Soroban transaction via RPC and poll for confirmation
+// ---------------------------------------------------------------------------
+export async function submitSorobanTx(signedXdr: string): Promise<{
+  success: true;
+  hash: string;
+} | {
+  success: false;
+  message: string;
+}> {
+  const tx = StellarSdk.TransactionBuilder.fromXDR(
+    signedXdr,
+    config.networkPassphrase
+  );
+
+  try {
+    const sendRes = await rpc.sendTransaction(tx);
+    if (sendRes.status === "ERROR") {
+      return {
+        success: false,
+        message: `Transaction rejected: ${JSON.stringify(sendRes.errorResult)}`,
+      };
+    }
+
+    // Poll for confirmation
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      const result = await rpc.getTransaction(sendRes.hash);
+      if (result.status === "SUCCESS") {
+        return { success: true, hash: sendRes.hash };
+      }
+      if (result.status === "FAILED") {
+        return { success: false, message: "Transaction failed on-chain" };
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return { success: false, message: "Transaction confirmation timed out" };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Soroban submission failed";
+    return { success: false, message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Classic: Build an XLM payment transaction (returns unsigned XDR)
 // ---------------------------------------------------------------------------
 export async function buildPaymentTx(
   sourceAddress: string,
   destinationAddress: string,
-  amount: string // in XLM (e.g. "10.5")
+  amount: string
 ): Promise<string> {
-  // Validate destination address
-  if (!StellarSdk.StrKey.isValidEd25519PublicKey(destinationAddress)) {
-    throw new Error("Invalid destination address");
+  const isValidAddress =
+    StellarSdk.StrKey.isValidEd25519PublicKey(destinationAddress) ||
+    StellarSdk.StrKey.isValidMed25519PublicKey(destinationAddress);
+  if (!isValidAddress) {
+    throw new Error(
+      "Invalid destination address (expected G... or M... address)"
+    );
   }
 
-  // Validate amount
   const parsed = parseFloat(amount);
   if (isNaN(parsed) || parsed <= 0) {
     throw new Error("Amount must be greater than 0");
@@ -91,7 +209,7 @@ export async function buildPaymentTx(
 }
 
 // ---------------------------------------------------------------------------
-// Submit a signed transaction XDR via Horizon
+// Classic: Submit a signed transaction XDR via Horizon
 // ---------------------------------------------------------------------------
 export async function submitSignedTransaction(signedXdr: string) {
   const transaction = StellarSdk.TransactionBuilder.fromXDR(
@@ -107,7 +225,6 @@ export async function submitSignedTransaction(signedXdr: string) {
       ledger: response.ledger,
     };
   } catch (err: unknown) {
-    // Horizon returns detailed error info inside response.data.extras
     const error = err as {
       response?: {
         data?: {
@@ -142,21 +259,22 @@ export async function submitSignedTransaction(signedXdr: string) {
     return { success: false as const, message };
   }
 }
+
 // ---------------------------------------------------------------------------
 // Fetch transaction history (for contribution heatmap + transaction list)
 // ---------------------------------------------------------------------------
 export interface TransactionDay {
-  date: string; // YYYY-MM-DD
+  date: string;
   count: number;
 }
 
 export interface TransactionRecord {
   hash: string;
-  date: string;        // YYYY-MM-DD
-  time: string;        // HH:MM:SS
-  createdAt: string;   // full ISO string
+  date: string;
+  time: string;
+  createdAt: string;
   operationCount: number;
-  fee: string;         // in stroops
+  fee: string;
   memo: string;
   successful: boolean;
   sourceAccount: string;
@@ -174,7 +292,6 @@ export async function fetchTransactionHistory(
   const records: TransactionRecord[] = [];
 
   try {
-    // Fetch transactions using Horizon pagination (api-rpc-horizon.md skill)
     let page = await horizon
       .transactions()
       .forAccount(address)
@@ -183,7 +300,7 @@ export async function fetchTransactionHistory(
       .call();
 
     let totalFetched = 0;
-    const MAX_RECORDS = 1000; // cap to avoid very long fetches
+    const MAX_RECORDS = 1000;
 
     while (page.records.length > 0 && totalFetched < MAX_RECORDS) {
       for (const tx of page.records) {
@@ -210,11 +327,10 @@ export async function fetchTransactionHistory(
       try {
         page = await page.next();
       } catch {
-        break; // no more pages
+        break;
       }
     }
   } catch {
-    // Account not found or network error — return empty
     return { days: [], records: [] };
   }
 
@@ -224,4 +340,3 @@ export async function fetchTransactionHistory(
 
   return { days, records };
 }
-

@@ -128,7 +128,6 @@ export default function TransactionHeatmap({
     onSelectDate(selectedDate === dateKey ? null : dateKey);
   };
 
-  // Not connected placeholder
   if (!isConnected) {
     return (
       <div className="w-full">
