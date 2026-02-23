@@ -33,11 +33,15 @@ export function useWallet() {
   return useContext(WalletContext);
 }
 
+const horizonUrl =
+  process.env.NEXT_PUBLIC_HORIZON_URL ||
+  (process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet"
+    ? "https://horizon.stellar.org"
+    : "https://horizon-testnet.stellar.org");
+
 async function fetchXlmBalance(address: string): Promise<number> {
   try {
-    const res = await fetch(
-      `https://horizon-testnet.stellar.org/accounts/${address}`
-    );
+    const res = await fetch(`${horizonUrl}/accounts/${address}`);
     if (!res.ok) return 0;
     const data = await res.json();
     const nativeBalance = data.balances?.find(
@@ -87,7 +91,10 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
       );
 
       StellarWalletsKit.init({
-        network: Networks.TESTNET,
+        network:
+          process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet"
+            ? Networks.PUBLIC
+            : Networks.TESTNET,
         modules: defaultModules(),
       });
 
@@ -157,8 +164,12 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
       const { StellarWalletsKit } = await import(
         "@creit-tech/stellar-wallets-kit/sdk"
       );
+      const networkPassphrase =
+        process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet"
+          ? "Public Global Stellar Network ; September 2015"
+          : "Test SDF Network ; September 2015";
       const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
-        networkPassphrase: "Test SDF Network ; September 2015",
+        networkPassphrase,
       });
       return signedTxXdr;
     },

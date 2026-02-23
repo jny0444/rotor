@@ -661,7 +661,7 @@ export default function Swap() {
                 ].map(({ label, hash }) => (
                   <a
                     key={label}
-                    href={`https://stellar.expert/explorer/testnet/tx/${hash}`}
+                    href={`https://stellar.expert/explorer/${process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "public" : "testnet"}/tx/${hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block text-[11px] ibm-plex-mono-regular text-center break-all text-emerald-600 underline underline-offset-2 hover:text-emerald-800 transition-colors"

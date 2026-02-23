@@ -1,4 +1,4 @@
 # Rotor
 A privacy focused payments protocol on Stellar.
 
-Rotor CA `changing soon`
+Rotor CA `CBMQYO5IMT2P2AXSOEB6ON3CA3WLOYRVHEK26CK4T7G6H7YHCM2HADQ5`

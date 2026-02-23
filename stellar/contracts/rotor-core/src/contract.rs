@@ -9,14 +9,14 @@ use soroban_sdk::{
 // ---------------------------------------------------------------------------
 #[contracttype]
 pub enum DataKey {
-    Relayer,            // Address: authorized relayer (submits withdrawals)
-    Token,              // Address: SAC address for the deposited asset (e.g. native XLM)
-    Depth,              // u32: tree depth (set once in constructor)
-    NextLeafIndex,      // u32: next leaf to insert
-    CurrentRootIndex,   // u32: position in root ring buffer
-    CachedSubtree(u32), // BytesN<32>: cached subtree at level i
-    Root(u32),          // BytesN<32>: root at ring buffer position i
-    Leaf(u32),          // BytesN<32>: commitment at leaf index i
+    Relayer,               // Address: authorized relayer (submits withdrawals)
+    Token,                 // Address: SAC address for the deposited asset (e.g. native XLM)
+    Depth,                 // u32: tree depth (set once in constructor)
+    NextLeafIndex,         // u32: next leaf to insert
+    CurrentRootIndex,      // u32: position in root ring buffer
+    CachedSubtree(u32),    // BytesN<32>: cached subtree at level i
+    Root(u32),             // BytesN<32>: root at ring buffer position i
+    Leaf(u32),             // BytesN<32>: commitment at leaf index i
     Nullifier(BytesN<32>), // bool: whether a nullifier_hash has been spent
 }
 
@@ -90,7 +90,16 @@ impl RotorCore {
     /// - `relayer`: address authorized to submit withdrawals on behalf of recipients.
     /// - `token`:   SAC address for the deposited asset (native XLM on testnet:
     ///              CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC).
-    pub fn __constructor(env: Env, relayer: Address, token: Address) {
+    pub fn init(env: Env) {
+        let relayer = Address::from_str(
+            &env,
+            "GC2E5CXISHP3DMHIR674RQL3IQQK3AZEQ2EOOCIZR4B5IYA3KXP3VKKT",  // relayer mainnet address
+        );
+        let token = Address::from_str(
+            &env,
+            "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",  // XLM mainnet addy
+        );
+
         env.storage().instance().set(&DataKey::Relayer, &relayer);
         env.storage().instance().set(&DataKey::Token, &token);
         env.storage().instance().set(&DataKey::Depth, &TREE_DEPTH);
@@ -179,12 +188,7 @@ impl RotorCore {
         let token_client = token::Client::new(&env, &token_addr);
         token_client.transfer(&env.current_contract_address(), &recipient, &amount);
 
-        log!(
-            &env,
-            "Withdraw: recipient={}, amount={}",
-            recipient,
-            amount
-        );
+        log!(&env, "Withdraw: recipient={}, amount={}", recipient, amount);
     }
 
     /// Interpret the lower 16 bytes of a 32-byte big-endian field element as i128.

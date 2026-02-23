@@ -9,9 +9,10 @@ import circuit from "./circuit.json";
 // ---------------------------------------------------------------------------
 const RELAYER_PORT = Number(process.env.PORT || 3001);
 const STELLAR_RPC =
-  process.env.STELLAR_RPC || "https://soroban-testnet.stellar.org";
+  process.env.STELLAR_RPC || "https://mainnet.sorobanrpc.com";
 const NETWORK_PASSPHRASE =
-  process.env.NETWORK_PASSPHRASE || "Test SDF Network ; September 2015";
+  process.env.NETWORK_PASSPHRASE ||
+  "Public Global Stellar Network ; September 2015";
 const CONTRACT_ID = process.env.CONTRACT_ID || "";
 const RELAYER_SECRET = process.env.RELAYER_SECRET || "";
 

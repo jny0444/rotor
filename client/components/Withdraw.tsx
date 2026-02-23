@@ -289,7 +289,7 @@ export default function Withdraw() {
               <p className="font-semibold text-center">{status.message || "Withdrawal successful! ✓"}</p>
               {status.txHash && (
                 <a
-                  href={`https://stellar.expert/explorer/testnet/tx/${status.txHash}`}
+                  href={`https://stellar.expert/explorer/${process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "public" : "testnet"}/tx/${status.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-2 block text-xs text-center break-all text-emerald-600 underline underline-offset-2 hover:text-emerald-800 transition-colors"

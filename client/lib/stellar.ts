@@ -10,17 +10,30 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 // ---------------------------------------------------------------------------
 // Network configuration
 // ---------------------------------------------------------------------------
+const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK || "mainnet";
+const isMainnet = network === "mainnet";
+
 export const config = {
-  rpcUrl: "https://soroban-testnet.stellar.org",
-  horizonUrl: "https://horizon-testnet.stellar.org",
-  networkPassphrase: "Test SDF Network ; September 2015",
+  rpcUrl:
+    process.env.NEXT_PUBLIC_RPC_URL ||
+    (isMainnet
+      ? "https://mainnet.sorobanrpc.com"
+      : "https://soroban-testnet.stellar.org"),
+  horizonUrl:
+    process.env.NEXT_PUBLIC_HORIZON_URL ||
+    (isMainnet
+      ? "https://horizon.stellar.org"
+      : "https://horizon-testnet.stellar.org"),
+  networkPassphrase: isMainnet
+    ? "Public Global Stellar Network ; September 2015"
+    : "Test SDF Network ; September 2015",
   friendbotUrl: "https://friendbot.stellar.org",
 };
 
 export const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
 export const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
 
-// Rotor contract and XLM SAC on testnet
+// Rotor contract and XLM SAC
 export const ROTOR_CONTRACT_ID =
   process.env.NEXT_PUBLIC_ROTOR_CONTRACT_ID || "";
 export const XLM_SAC_ID =

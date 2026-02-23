@@ -82,7 +82,7 @@ export default function TransactionList({
               {displayedTxns.map((tx) => (
                 <a
                   key={tx.hash}
-                  href={`https://stellar.expert/explorer/testnet/tx/${tx.hash}`}
+                  href={`https://stellar.expert/explorer/${process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "public" : "testnet"}/tx/${tx.hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50/80 hover:bg-blue-50/80 border border-gray-100 hover:border-blue-200 transition-all duration-150"
