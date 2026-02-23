@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { UltraHonkBackend } from "@aztec/bb.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
-import circuit from "./circuit.json";
+import circuit from "./circuit.json" with { type: "json" };
 
 // ---------------------------------------------------------------------------
 // Config
