@@ -167,8 +167,8 @@ export default function UserPane() {
           <div className="flex flex-col items-end">
             <span className="text-sm font-semibold text-gray-800 sora-font">
               {balance.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 7,
+                minimumFractionDigits: 3,
+                maximumFractionDigits: 3,
               })}
             </span>
             <span className="text-xs text-gray-400 ibm-plex-mono-regular">
