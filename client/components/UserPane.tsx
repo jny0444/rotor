@@ -172,7 +172,7 @@ export default function UserPane() {
               })}
             </span>
             <span className="text-xs text-gray-400 ibm-plex-mono-regular">
-              ${(balance * 0).toFixed(2)}
+              ${(balance * 0.16).toFixed(2)}
             </span>
           </div>
         </div>

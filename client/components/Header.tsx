@@ -17,7 +17,7 @@ export default function Header() {
       <div className="flex flex-row rounded-xl p-2 pt-0 sm:p-4 justify-between items-center">
         <Link href="/" className="flex flex-row gap-2 items-center">
           <Image
-            src="/favicon.svg"
+            src="/favicon-1.svg"
             alt="Rotor Logo"
             width={1}
             height={1}

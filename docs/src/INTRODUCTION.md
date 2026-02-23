@@ -1,43 +1,32 @@
-# Introduction
+# Rotor
 
-## What is Rotor?
+Rotor is a **private payments protocol on Stellar**. It lets you send XLM to any Stellar address without creating a publicly visible on-chain link between the sender and the recipient.
 
-Rotor is a privacy-focused payments protocol built on the Stellar blockchain that leverages zero-knowledge (ZK) proofs to enable confidential transactions. By breaking the on-chain link between depositor and recipient addresses, Rotor allows users to transfer assets while preserving their financial privacy.
+## The Core Idea
 
-## Why Privacy Matters
+Rotor is a shielded pool. When you deposit, you receive a **withdrawal note** — a short JSON object you keep private. When you want the funds sent to another address, you present that note to Rotor, which generates a cryptographic proof that you are the rightful owner, and releases the funds to the destination without revealing the original deposit.
 
-While blockchain technology offers transparency and immutability, it also exposes all transaction details publicly. This lack of privacy can be problematic for:
+```
+Alice deposits 1 XLM → contract ← no link → Bob receives 1 XLM
+```
 
-- **Individuals** who want to keep their financial activities confidential
-- **Businesses** that need to protect sensitive transaction data from competitors
-- **Users** concerned about being tracked or profiled based on their on-chain activity
+The proof is generated entirely in your browser using [Noir](https://noir-lang.org) circuits and the [Barretenberg](https://barretenberg.aztec.network) proving backend. No private key material ever leaves your device.
 
-Rotor addresses these concerns by providing a trustless, non-custodial privacy layer for Stellar assets.
+## Components
 
-## How It Works
+| Component | Description |
+|---|---|
+| **Client** | Next.js frontend — wallet connection, deposit UI, proof generation |
+| **Relayer** | Node.js server — receives proof, verifies it, submits the on-chain withdrawal |
+| **rotor-core** | Soroban smart contract — Merkle tree, nullifier tracking, XLM transfers |
+| **Circuit** | Noir ZK circuit — proves knowledge of a valid commitment without revealing it |
 
-Rotor uses cryptographic techniques to ensure privacy:
+## Threat Model
 
-1. **Deposits**: Users deposit assets into the Rotor protocol along with a cryptographic commitment (derived from a secret and nullifier using Poseidon hashing)
-2. **Merkle Tree**: All commitments are stored in a Merkle tree, creating a set of anonymous deposits
-3. **Withdrawals**: To withdraw, users provide a zero-knowledge proof that demonstrates they know a valid secret without revealing which deposit is theirs
-4. **Nullifiers**: Each withdrawal uses a nullifier hash to prevent double-spending while maintaining anonymity
+- The relayer is a **trusted service**: it verifies ZK proofs before submitting. It cannot steal funds, but it can censor withdrawals.
+- The Soroban contract enforces **nullifier uniqueness** — no commitment can be withdrawn twice even if the relayer is compromised.
+- The ZK proof hides which deposit corresponds to which withdrawal. On-chain, observers see only a commitment being inserted and later a nullifier being spent.
 
-The zero-knowledge circuit ensures that withdrawals can only be made by legitimate depositors while keeping their identity private.
+---
 
-## Technical Architecture
-
-Rotor consists of four main components:
-
-- **Stellar Smart Contracts (Soroban)**: Core protocol logic handling deposits, withdrawals, and state management
-- **ZK Circuit (Noir)**: Zero-knowledge proof system that verifies withdrawal validity without revealing sensitive information
-- **Backend (Go)**: API server coordinating between the blockchain and client
-- **Frontend (Next.js)**: User-friendly web interface for interacting with the protocol
-
-## Key Features
-
-- **Privacy-Preserving**: Break the on-chain link between sender and receiver
-- **Non-Custodial**: Users maintain full control of their assets
-- **Zero-Knowledge Proofs**: Cryptographically secure without revealing transaction details
-- **Stellar-Native**: Built on Stellar's fast and low-cost infrastructure
-- **Open Source**: Transparent and auditable codebase
+*If you only read one chapter, read **Quick Start**.*

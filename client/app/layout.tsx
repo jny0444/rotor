@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   title: "Rotor",
   description: "Privacy focused protocol on Stellar",
   icons: {
-    icon: "/favicon.svg",
+    icon: "/favicon-1.svg",
   },
 };
 
