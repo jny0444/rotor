@@ -7,12 +7,20 @@ export default function Footer() {
     <>
       <div className="flex flex-row gap-3 p-3 justify-end">
         <div className="bg-black w-10 h-10 rounded-md flex items-center justify-center">
-          <Link href="" target="_blank" rel="noopener noreferrer">
+          <Link
+            href="https://jny0444.github.io/rotor-docs/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <TiDocumentText className="w-8 h-8 rounded-md" />
           </Link>
         </div>
         <div className="bg-black w-10 h-10 rounded-md flex items-center justify-center">
-          <Link href="" target="_blank" rel="noopener noreferrer">
+          <Link
+            href="https://github.com/jny0444/rotor"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <Image
               src="/github.svg"
               alt="GitHub"
