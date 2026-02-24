@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { UltraHonkBackend } from "@aztec/bb.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
@@ -357,7 +358,8 @@ console.log(`Rotor Relayer on http://localhost:${RELAYER_PORT}`);
 console.log(`  Contract: ${CONTRACT_ID || "(not set)"}`);
 console.log(`  RPC:      ${STELLAR_RPC}`);
 
-export default {
-  port: RELAYER_PORT,
+serve({
   fetch: app.fetch,
-};
+  port: RELAYER_PORT,
+  hostname: "0.0.0.0", // required for Render/cloud: accept external connections
+});
