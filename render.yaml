@@ -1,0 +1,12 @@
+# Render.com config - forces Node.js for bb.js worker compatibility
+# See: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: rotor-relayer
+    runtime: node
+    rootDir: relayer
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
