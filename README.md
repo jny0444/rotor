@@ -28,6 +28,8 @@ Alice deposits 1 XLM → shielded pool ← no link → Bob receives 1 XLM
 
 The Soroban contract enforces nullifier uniqueness (no double-spend) and transfers XLM via the Stellar Asset Contract. Observers see only commitments and nullifiers—not the link between them.
 
+You can look at how it works [here](https://drive.google.com/file/d/1UnTBRe96erOuKY5XV1Oiz821UCMGL2ys/view?usp=sharing).
+
 ---
 
 ## Architecture
